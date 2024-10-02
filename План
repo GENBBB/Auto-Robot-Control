@@ -1,0 +1,20 @@
+area - нет работы с динамическими объектами, update, parse, нет документации по динамическим объектам, Исключения
+obstacles - добавить объекты, Исключения
+
+robot_system - lidar(Проверить), control, Исключения
+
+geometry - Исключения
+
+animation - оформление, зрение роботов, исключения, синхронизация частоты кадров, не привязывать к роботам
+
+main - ?
+
+scikit-spatial.objects.Line
+scikit-spatial.objects.Point
+scikit-spatial.objects.Vector
+
+seed
+4 6 7
+
+seed 21
+seed 23
