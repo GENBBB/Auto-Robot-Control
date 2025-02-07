@@ -3,6 +3,7 @@ from typing import Self
 import math
 import numpy as np
 from skspatial.objects import Line, Point, Vector
+from .lidar import Lidar
 
 from config import config
 from expanse.area import Area
@@ -10,8 +11,8 @@ from expanse.obstacles import Circle
 import geometry.geometry as geo
 
 max_dv = float(config['Robot']['max_dv'])
-gamma_const = [4.0, 4.0]
-beta_const = [5.0, 0.0]
+gamma_const = [7.0, 4.0]
+beta_const = [4.0, 0.0]
 alpha_const = [0.5, 0.5]
 delta_const = [50.0, 50.0]
 rep_const = 1.0
@@ -20,7 +21,7 @@ eps = 0.00001
 alpha1 = 1
 b = 10
 distance = 6
-distance_obj = 5
+distance_obj = 1.5
 distance_rob = 3
 flag_convex = True
 
@@ -64,6 +65,7 @@ class Robot:
         self.position = point
         self.radius = radius
         self.size = size
+        self.lidar = Lidar(radius, lidar_parts)
         self.lidar_parts = lidar_parts
         self.lidar_angle = 2 * math.pi / lidar_parts
         self.t = 1 / frequency
@@ -80,56 +82,38 @@ class Robot:
 
     def to_convex(self, points, mask_prev):
         mask = mask_prev.astype(int)
-        for i in range(self.lidar_parts):
-            if mask[i] == 0 and mask[i - 1] == 1:
-                last_id = i
-                flag = False
-                for j in range(5):
-                    if mask[(i + j) % self.lidar_parts] == 1:
-                        flag = True
-                        last_id = (i + j) % self.lidar_parts
-                if flag:
-                    for j in range(5):
-                        if (i + j) % self.lidar_parts != last_id:
-                            mask[(i + j) % self.lidar_parts] = 3
-
         id_start = index(mask, 0)[0]
-        id_cur = id_start + 1
-        while id_cur != id_start:
-            id_cur = id_cur % self.lidar_parts
-            if mask[id_cur]:
-                id_a = id_cur
-                while True:
-                    id_b = (id_a + 1) % self.lidar_parts
-                    while mask[id_b] == 3:
-                        id_b = (id_b + 1) % self.lidar_parts
-                    if mask[id_b]:
-                        id_c = (id_b + 1) % self.lidar_parts
-                        while mask[id_c] == 3:
-                            id_c = (id_c + 1) % self.lidar_parts
-                        if mask[id_c]:
-                            if np.sign(geo.pseudo_dot(points[id_b] - points[id_a], points[id_c] - points[id_b])) != -1:
-                                mask[id_b] = 3
-                                id_a = id_cur
-                            else:
-                                id_a = id_b
-                        else:
-                            flag = False
-                            for i in range(1, 5):
-                                if mask[(i + id_c) % self.lidar_parts] != 0:
+        id_cur = (id_start + 1) % self.lidar_parts
+        flag = True
+        while flag:
+            flag = False
+            while id_cur != id_start:
+                id_cur = id_cur % self.lidar_parts
+                if mask[id_cur]:
+                    id_a = id_cur
+                    while True:
+                        id_b = (id_a + 1) % self.lidar_parts
+                        while mask[id_b] == 3:
+                            id_b = (id_b + 1) % self.lidar_parts
+                        if mask[id_b]:
+                            id_c = (id_b + 1) % self.lidar_parts
+                            while mask[id_c] == 3:
+                                id_c = (id_c + 1) % self.lidar_parts
+                            if mask[id_c]:
+                                if np.sign(geo.pseudo_dot(points[id_b] - points[id_a], points[id_c] - points[id_b])) != -1:
+                                    mask[id_b] = 3
                                     flag = True
-                                    break
-                            if flag:
-                                for i in range(5):
-                                    mask[(i + id_c) % self.lidar_parts] = 3
+                                else:
+                                    id_a = id_b
                             else:
                                 id_cur = id_c
                                 break
-                    else:
-                        id_cur = id_b
-                        break
-            else:
-                id_cur = (id_cur + 1) % self.lidar_parts
+                        else:
+                            id_cur = id_b
+                            break
+                else:
+                    id_cur = (id_cur + 1) % self.lidar_parts
+            id_cur = (id_cur + 1) % self.lidar_parts
         id_cur = (id_start + 1) % self.lidar_parts
         while id_cur != id_start:
             if mask[id_cur] == 3:
@@ -140,7 +124,7 @@ class Robot:
                 b_0 = points[id_tmp]
                 line1 = Line(a_0, b_0 - a_0)
                 while mask[id_cur] == 3:
-                    line2 = Line(self.position, [np.cos(id_cur * self.lidar_angle), np.sin(id_cur * self.lidar_angle)])
+                    line2 = Line(self.position, [np.cos(id_cur * self.lidar_angle + self.angle[-1]), np.sin(id_cur * self.lidar_angle + self.angle[-1])])
                     points[id_cur] = line1.intersect_line(line2)
                     id_cur = (id_cur + 1) % self.lidar_parts
             else:
@@ -227,7 +211,14 @@ class Robot:
             Updated robot speed
         """
         """In Progress"""
-        detected_points = self.lidar(area)
+        detected_points = self.lidar.lidar(area, self.position, self.angle[-1], self.size)
+        tmp = np.full(detected_points.shape, self.position)
+        mask1 = np.linalg.norm(detected_points - tmp, axis=1) <= self.radius
+        mask2 = np.linalg.norm(detected_points - tmp, axis=1) >= self.size
+        detected_points = self.to_convex(detected_points, mask2 & mask1)
+        mask1 = np.linalg.norm(detected_points - tmp, axis=1) <= self.radius
+        mask2 = np.linalg.norm(detected_points - tmp, axis=1) >= self.size
+        self.detected_points.append(detected_points[mask1 & mask2])
         return self.alpha_control(cluster) + self.beta_control(detected_points) + self.gamma_control(end_area) + self.delta_control(cluster)
 
     def update(self, area: Area, end_area: Point, cluster: list[Self]) -> Self:

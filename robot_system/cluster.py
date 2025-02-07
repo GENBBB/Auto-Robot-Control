@@ -1,9 +1,11 @@
+import math
 from typing import Self, Optional, List, NoReturn
 
 import numpy as np
 from skspatial.objects import Point
 
-from robot import Robot
+from .lidar import Lidar
+from .robot import Robot
 from expanse.area import Area
 from expanse.obstacles import Circle
 from .trace import Trace
@@ -15,121 +17,80 @@ class Cluster:
     When creating a cluster, the same sampling rate is required for all robots
     And also so that the robots do not collide with each other
     """
-    def __init__(self, robots: List[Robot], frequency: float) -> None:
-        """
-        Parameters
-        ----------
-        robots: list of Robot
-            List of robots in the cluster
-        frequency: float
-            Cluster sampling rate
-        """
-        self.robots = robots
-        self.check_collision(None)
+    def __init__(self, n: int, size: float, radius: float, lidar_parts: int, frequency: float) -> None:
+        self.x = np.empty((n, 2))
+        self.v = np.zeros((n, 2))
+        self.turn = np.empty(n)
+
+        self.size = size
+        self.lidar = Lidar(radius, lidar_parts)
+
+        self.t = 1 / frequency
         self.frequency = frequency
         self.steps = 0
 
+        self.track = []
+        self.angles = []
+        self.detected_points = []
+
     def check_collision(self, area: Optional[Area]) -> NoReturn:
-        for id1, rob1 in enumerate(self.robots):
-            for rob2 in self.robots[id1+1:]:
-                if np.linalg.norm(rob1.position - rob2.position) < rob1.size + rob2.size:
+        for i in range(len(self.x) - 1):
+            for j in range(i + 1, len(self.x)):
+                if np.linalg.norm(self.x[i] - self.x[j]) < 2 * self.size:
                     raise RuntimeError("There was a collision with a robot")
-        for rob in self.robots:
-            for obj in area.obstacles:
-                if type(obj) is Circle:
-                    if np.linalg.norm(rob.position - obj.position) < rob.size + obj.size:
-                        raise RuntimeError("There was a collision with a obstacle")
+        if area is not None:
+            for i in range(len(self.x)):
+                for obj in area.obstacles:
+                    if type(obj) is Circle:
+                        if np.linalg.norm(self.x[i] - obj.point) < self.size + obj.size:
+                            raise RuntimeError("There was a collision with a obstacle")
+
+    def control(self, area: Area) -> np.ndarray:
+        detected_points = self.lidar.scan(area, self.x, self.turn, self.size)
+        self.detected_points.append(detected_points.reshape(-1, 2))
+        u = np.ones((len(self.x), 2))
+        return u
 
     def update(self, area: Area, target: Point) -> Self:
-        """
-        Moves the cluster during sampling time across the area to the selected target.
-        Updates the state of the robots in the cluster according to the sampling rate of each robot.
+        u = self.control(area)
+        self.x = self.x + self.v * self.t + u * self.t * self.t / 2
+        self.v = self.v + u * self.t
+        self.turn = np.arctan2(self.v[:, 1], self.v[:, 0])
 
-        Parameters
-        -------
-        area: Area
-            An area with obstacles through which the cluster moves
-        target: Point
-            The goal of the movement at the current moment in time
-
-        Returns
-        -------
-        self: Cluster
-            Cluster in updated condition
-        """
-        for robot in self.robots:
-            robot.update(area, target, self.robots)
+        self.track.append(self.x)
+        self.angles.append(self.turn)
         self.check_collision(area)
+        # noinspection PyUnreachableCode
         self.steps += 1
         return self
 
-    def parse_trace(self, fps: int) -> List[Trace]:
-        """
-        Get cluster track for all time according to frames per second
-        Returns the Tuple of instances of the Trace class
-
-        Returns
-        -------
-        list of Trace
-            Cluster trace
-        """
+    def parse_trace(self, fps: int):
         frames = [i for i in range(0, self.steps, round(self.frequency / fps))]
-        cluster_trace = []
-        for robot in self.robots:
-            track = []
-            angle = []
-            detected_points = []
-            for frame in frames:
-                track.append(robot.trajectory[frame])
-                angle.append(robot.angle[frame])
-                detected_points.append(robot.detected_points[frame])
-            cluster_trace.append(Trace(robot.size, track, angle, detected_points))
-        return cluster_trace
+        track = [self.track[i] for i in frames]
+        angles = [self.angles[i] for i in frames]
+        detected_points = [self.detected_points[i] for i in frames]
+        return track, angles, detected_points
 
-
-def create_cluster(n_robots: int, start_area: Point, size_start_area: float, size: float, radius: float,
-                   lidar_parts: int, frequency: float) -> Cluster:
-    """
-    Create a group of homogeneous robots randomly distributed in a given circle area with zero initial speed
-
-    Parameters
-    ----------
-    n_robots: int
-        Number of robots in the cluster
-    start_area: Point
-        Coordinates of the center of the circular starting area
-    size_start_area: float
-        Size of circular starting area
-    radius: float
-        Radius of robots
-    size: float
-        Size of robots
-    lidar_parts: int
-        The number of rays with which the robots surveys space
-    frequency: float
-        Sampling frequency
-
-    Returns
-    -------
-    Cluster
-        Robot cluster in a given area
-    """
-    cluster = []
-    for i in range(n_robots):
-        flag = True
-        k = 0
-        position = None
-        while flag:
-            if k > 100:
-                raise RuntimeWarning
-            r = size_start_area * np.sqrt(np.random.uniform())
-            theta = np.random.uniform() * 2 * np.pi
-            position = Point(start_area + r * np.array([np.cos(theta), np.sin(theta)]))
-            flag = False
-            k += 1
-            for rob in cluster:
-                if np.linalg.norm(rob.position - position) < 2 * size:
-                    flag = True
-                    break
-        cluster.append(Robot(position, radius, size, lidar_parts, frequency))
-    return Cluster(cluster, frequency)
+    def arrangement(self, start_area: Point, size_start_area: float) -> Self:
+        for i in range(len(self.x)):
+            flag = True
+            k = 0
+            position = None
+            while flag:
+                if k > 100:
+                    raise RuntimeWarning
+                r = size_start_area * np.sqrt(np.random.uniform())
+                theta = np.random.uniform() * 2 * np.pi
+                position = Point(start_area + r * np.array([np.cos(theta), np.sin(theta)]))
+                flag = False
+                k += 1
+                for j in range(i):
+                    if np.linalg.norm(self.x[j] - position) < 2 * self.size:
+                        flag = True
+                        break
+            self.x[i] = position
+            self.turn[i] = np.random.uniform() * 2 * np.pi
+        self.track.append(self.x)
+        self.angles.append(self.turn)
+        self.detected_points.append(np.empty((0, 2)))
+        return self

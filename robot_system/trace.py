@@ -8,7 +8,7 @@ class Trace:
     Class for storing the Robot trace
     Stores the size of the robot, its trajectory, rotation angles, and detected obstacles
     """
-    def __init__(self, size: float, track: List[Point] = None, angle: List[Point] = None,
+    def __init__(self, size: float, track: List[Point] = None, angle: List[float] = None,
                  detected_points: List[List[Point]] = None):
         """
         Parameters
@@ -23,9 +23,6 @@ class Trace:
             List of obstacles detected by the robot at each moment in time according to the sampling time
         """
         self.size = size
-        if track is None:
-            self.track = track
-        if angle is None:
-            self.angle = angle
-        if detected_points is None:
-            self.detected_points = detected_points
+        self.track = track
+        self.angle = angle
+        self.detected_points = detected_points

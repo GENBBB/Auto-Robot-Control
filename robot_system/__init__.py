@@ -1,3 +1,4 @@
-from .robot import Robot, Cluster, create_cluster
+from .robot import Robot
+from .cluster import Cluster
 
-__all__ = ['Robot', 'Cluster', 'create_cluster']
+__all__ = ['Robot', 'Cluster']

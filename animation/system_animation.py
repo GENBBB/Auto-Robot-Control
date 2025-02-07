@@ -1,11 +1,14 @@
-import matplotlib
 
-matplotlib.use('TkAgg')
+
 
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+from PIL.ImageChops import offset
+from matplotlib.animation import FuncAnimation, PillowWriter, FFMpegWriter
 import matplotlib.collections as collections
 from matplotlib.patches import RegularPolygon
+from matplotlib.pyplot import scatter
+from scipy.constants import point
+
 from config import config
 from expanse.area import Area
 from robot_system import Cluster
@@ -22,7 +25,7 @@ class SystemAnimation:
     """
     Class for animating the movement of a cluster in an area with obstacles
     """
-    def __init__(self, area: Area, cluster: Cluster, steps: int, collision_frame: int, robot_vision: bool = False):
+    def __init__(self, area: Area, cluster: Cluster, steps: int, collision_frame: int, robot_vision: bool = False, size: float = 1):
         """
         Parameters
         ----------
@@ -34,12 +37,14 @@ class SystemAnimation:
             Number of steps taken by a cluster and area
         """
         self.static_circle = area.parse()
-        self.cluster_trace, self.detected_points_trace, self.detection_line_trace = cluster.parse_trace(30)
+        self.cluster_trace, self.angles, self.detected_points_trace = cluster.parse_trace(30)
         self.cluster_collections = None
         self.cluster = None
         self.fig = None
         self.ax = None
         self.scatter = None
+        self.scatter_trace = None
+        self.trace = None
         self.line_collection = None
         self.line = None
         self.robots_vision = robot_vision
@@ -47,6 +52,7 @@ class SystemAnimation:
             self.detected_points_trace = None
         self.collision_frame = collision_frame
         self.frames = steps
+        self.size = size
 
     def start(self) -> Self:
         """
@@ -66,38 +72,54 @@ class SystemAnimation:
 
         # Drawing robots
         self.cluster_collections = []
-        self.frames = len(self.cluster_trace[0]['coordinates'])
+        self.frames = len(self.cluster_trace)
         for frame in range(self.frames):
             cluster_patch = []
-            for robot_trace in self.cluster_trace:
-                cluster_patch.append(RegularPolygon(robot_trace['coordinates'][frame], 3, radius=robot_trace['size'],
-                                                    orientation=robot_trace['angle'][frame], color='k'))
+            for i in range(len(self.cluster_trace[0])):
+                cluster_patch.append(RegularPolygon(self.cluster_trace[frame][i], 3, radius=self.size,
+                                                    orientation=self.angles[frame][i], color='k'))
             self.cluster_collections.append(cluster_patch)
-        self.cluster = collections.PatchCollection(self.cluster_collections[0], match_original=True)
+        self.cluster = collections.PatchCollection(self.cluster_collections[0], match_original=True, zorder=2)
         self.ax.add_collection(self.cluster)
 
-        # Drawing vision
+        #Drawing trace
+        self.trace = [[] for i in range(self.frames)]
+        for frame in range(self.frames):
+            for i in range(len(self.cluster_trace[0])):
+                if frame % 2 == 0:
+                    self.trace[frame].append(self.cluster_trace[frame][i])
+            if frame != self.frames - 1:
+                self.trace[frame+1] = self.trace[frame]
+            self.trace[frame] = np.array(self.trace[frame])
+        if True:
+            self.scatter_trace = plt.scatter(self.trace[0][:, 0], self.trace[0][:, 1], s = 0.5, c='b', zorder=0)
+            self.ax.add_collection(self.scatter_trace)
+
+
         if self.robots_vision:
+            print(self.detected_points_trace[0][:, 0])
             self.scatter = plt.scatter(self.detected_points_trace[0][:, 0], self.detected_points_trace[0][:, 1],
                                        s=0.5, c='r')
             self.ax.add_collection(self.scatter)
           #  self.line = collections.LineCollection(self.detection_line_trace[0], colors='r')
           #  self.ax.add_collection(self.line)
 
-        animation = FuncAnimation(self.fig, self.update, interval=interval, frames=2*self.frames, blit=False)
-        # Show
+        animation = FuncAnimation(self.fig, self.update, interval=interval, frames=self.frames, blit=False, repeat=False)
+        writer = FFMpegWriter(fps=30, metadata=dict(artist='Me'), bitrate=1800)
+        tmp = np.random.randint(0, 1000)
+        filename = str(tmp) + '.mp4'
+#        animation.save(filename, writer=writer)
         plt.show()
+        return
 
     def update(self, frame):
-        if self.collision_frame is None:
-            frame = frame % self.frames
-        elif frame >= self.frames:
-            frame = self.frames - 1
-        self.cluster.set_paths(self.cluster_collections[frame])
+ #       self.scatter_trace.set(offsets=self.trace[frame])
         if self.robots_vision:
-          #  self.line.set_paths(self.detection_line_trace[frame])
+            print(self.detected_points_trace[frame])
             self.scatter.set(offsets=self.detected_points_trace[frame])
-        return
+          #  self.line.set_paths(self.detection_line_trace[frame])
+        self.cluster.set_paths(self.cluster_collections[frame])
+        return self.cluster
 
     def pause(self):
         pass

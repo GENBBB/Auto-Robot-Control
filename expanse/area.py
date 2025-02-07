@@ -37,7 +37,7 @@ class Area:
         -------
 
         """
-        self.obstacles = [Circle.get_random(min_size, max_size, (10, width), (10, height)) for i in range(n_obj)]
+        self.obstacles = [Circle.get_random(min_size, max_size, (0, width), (0, height)) for i in range(n_obj)]
         return self
 
     def add(self, obs: Obstacle or list[Obstacle]) -> Self:
@@ -51,7 +51,7 @@ class Area:
         Returns
         -------
         self: Area
-            Area with added obstacles
+            With added obstacles
         """
         self.obstacles.append(obs)
         return self
@@ -76,6 +76,6 @@ class Area:
         static_circle = []
         for obj in self.obstacles:
             if type(obj) is Circle:
-                static_circle.append((obj.size, obj.position))
+                static_circle.append((obj.size, obj.point))
         static_circle = np.array(static_circle, dtype=dt_circle)
         return static_circle

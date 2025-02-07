@@ -29,17 +29,17 @@ if __name__ == '__main__':
     map_obj = Area()
     np.random.seed(seed)
     map_obj.random_static_set()
-    cluster = rob_sys.create_cluster(n_robots, Point([x_start, y_start]), size_start_area, radius, robot_size,
-                                     lidar_parts, frequency, Point([x_end, y_end]))
+    cluster = rob_sys.Cluster(n_robots, robot_size, radius, lidar_parts, frequency)
+    cluster.arrangement(Point([x_start, y_start]), size_start_area)
     collision_frame = None
     for i in range(steps):
         print(i)
         try:
-            cluster.update(map_obj)
+            cluster.update(map_obj, Point([x_end, y_end]))
         except RuntimeError:
             collision_frame = i
             print("zopa", i)
             break
     frames = range(0, steps, frequency // 30)
-    animation = SystemAnimation(map_obj, cluster, len(frames), collision_frame, robot_vision=True,)
+    animation = SystemAnimation(map_obj, cluster, len(frames), collision_frame, robot_vision=True, size=robot_size)
     animation.start()
