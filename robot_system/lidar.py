@@ -10,25 +10,13 @@ import geometry as geo
 
 
 class Lidar:
-    """
+    def __init__(self, lidar_settings: dict) -> None:
+        self.radius = lidar_settings['radius']
+        self.lidar_parts = lidar_settings['lidar_parts']
+        self.lidar_angle = 2 * math.pi / self.lidar_parts
+        self.rays = np.full((self.lidar_parts, 2), Point([0, 0]))
 
-    """
-    def __init__(self, radius: float, lidar_parts: int) -> None:
-        """
-        Parameters
-        ----------
-        radius : float
-            Robot viewing radius
-        lidar_parts: int
-            The number of rays with which the robot surveys space.
-            The angles of the rays are uniformly spaced in the interval from [0, 2pi]
-        """
-        self.radius = radius
-        self.lidar_parts = lidar_parts
-        self.lidar_angle = 2 * math.pi / lidar_parts
-        self.rays = np.full((lidar_parts, 2), Point([0, 0]))
-
-    def detected_circle(self, circle: Circle, pos: Point, turn: float, rays: np.ndarray) -> np.ndarray or None:
+    def detected_circle(self, circle: Circle, pos, turn, rays: np.ndarray) -> np.ndarray or None:
         if circle.point.distance_point(pos) <= self.radius + circle.size:
             try:
                 min_angle, max_angle = geo.viewing_angels_circle(pos, circle.point, circle.size)
@@ -52,6 +40,5 @@ class Lidar:
         for i in range(len(self.rays)):
             for obj in area.obstacles:
                 if type(obj) is Circle:
-                    # noinspection PyTypeChecker
                     self.rays[i] = self.detected_circle(obj, x[i], turn[i], self.rays[i])
         return self.rays

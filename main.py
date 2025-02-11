@@ -1,3 +1,5 @@
+import time
+
 import robot_system as rob_sys
 from expanse.area import Area
 from expanse.obstacles import Circle
@@ -24,22 +26,45 @@ if seed == 'None':
     seed = None
 else:
     seed = int(seed)
+gamma = [7.0, 4.0]
+beta = [4.0, 0.0]
+alpha = [0.5, 0.5]
+delta = [50.0, 50.0]
+rep = 1.0
+h = 0.5
+eps = 0.00001
+alpha1 = 1
+b = 10
+distance = 6
+distance_obj = 1.5
+distance_rob = 3
+convex = True
 
 if __name__ == '__main__':
+    start = time.time()
     map_obj = Area()
     np.random.seed(seed)
     map_obj.random_static_set()
-    cluster = rob_sys.Cluster(n_robots, robot_size, radius, lidar_parts, frequency)
+
+
+    lidar_settings = {'lidar_parts': lidar_parts, 'radius': radius}
+
+    controller_settings = {'gamma': gamma, 'beta': beta, 'alpha': alpha, 'delta': delta, 'eps': eps, 'h': h, 'rep': rep,
+                           'alpha1': alpha1, 'b': b, 'distance': distance, 'distance_obj': distance_obj,
+                           'distance_rob': distance_rob, 'convex': convex, 'radius': radius}
+
+    cluster = rob_sys.Cluster(n_robots, robot_size, frequency, lidar_settings, controller_settings)
     cluster.arrangement(Point([x_start, y_start]), size_start_area)
     collision_frame = None
     for i in range(steps):
-        print(i)
+        print("Step ", i)
         try:
             cluster.update(map_obj, Point([x_end, y_end]))
         except RuntimeError:
             collision_frame = i
             print("zopa", i)
             break
+    print(time.time() - start)
     frames = range(0, steps, frequency // 30)
     animation = SystemAnimation(map_obj, cluster, len(frames), collision_frame, robot_vision=True, size=robot_size)
     animation.start()

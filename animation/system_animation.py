@@ -91,13 +91,12 @@ class SystemAnimation:
             if frame != self.frames - 1:
                 self.trace[frame+1] = self.trace[frame]
             self.trace[frame] = np.array(self.trace[frame])
-        if True:
+        if False:
             self.scatter_trace = plt.scatter(self.trace[0][:, 0], self.trace[0][:, 1], s = 0.5, c='b', zorder=0)
             self.ax.add_collection(self.scatter_trace)
 
 
         if self.robots_vision:
-            print(self.detected_points_trace[0][:, 0])
             self.scatter = plt.scatter(self.detected_points_trace[0][:, 0], self.detected_points_trace[0][:, 1],
                                        s=0.5, c='r')
             self.ax.add_collection(self.scatter)
@@ -115,7 +114,6 @@ class SystemAnimation:
     def update(self, frame):
  #       self.scatter_trace.set(offsets=self.trace[frame])
         if self.robots_vision:
-            print(self.detected_points_trace[frame])
             self.scatter.set(offsets=self.detected_points_trace[frame])
           #  self.line.set_paths(self.detection_line_trace[frame])
         self.cluster.set_paths(self.cluster_collections[frame])

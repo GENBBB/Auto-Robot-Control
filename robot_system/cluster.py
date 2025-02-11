@@ -1,14 +1,12 @@
-import math
-from typing import Self, Optional, List, NoReturn
+from typing import Self, Optional
 
 import numpy as np
 from skspatial.objects import Point
 
+from .controller import Controller
 from .lidar import Lidar
-from .robot import Robot
 from expanse.area import Area
 from expanse.obstacles import Circle
-from .trace import Trace
 
 
 class Cluster:
@@ -17,13 +15,15 @@ class Cluster:
     When creating a cluster, the same sampling rate is required for all robots
     And also so that the robots do not collide with each other
     """
-    def __init__(self, n: int, size: float, radius: float, lidar_parts: int, frequency: float) -> None:
+    def __init__(self, n: int, size: float, frequency: float,
+                 lidar_settings: Optional[dict] = None, controller_settings: Optional[dict] = None) -> None:
         self.x = np.empty((n, 2))
         self.v = np.zeros((n, 2))
         self.turn = np.empty(n)
 
         self.size = size
-        self.lidar = Lidar(radius, lidar_parts)
+        self.lidar = Lidar(lidar_settings)
+        self.controller = Controller(controller_settings)
 
         self.t = 1 / frequency
         self.frequency = frequency
@@ -33,26 +33,31 @@ class Cluster:
         self.angles = []
         self.detected_points = []
 
-    def check_collision(self, area: Optional[Area]) -> NoReturn:
+    def check_collision(self, area: Optional[Area]) -> None:
         for i in range(len(self.x) - 1):
             for j in range(i + 1, len(self.x)):
                 if np.linalg.norm(self.x[i] - self.x[j]) < 2 * self.size:
-                    raise RuntimeError("There was a collision with a robot")
+                    pass
+              #      raise RuntimeError("There was a collision with a robot")
         if area is not None:
             for i in range(len(self.x)):
                 for obj in area.obstacles:
                     if type(obj) is Circle:
                         if np.linalg.norm(self.x[i] - obj.point) < self.size + obj.size:
-                            raise RuntimeError("There was a collision with a obstacle")
+                            pass
+                        #    raise RuntimeError("There was a collision with a obstacle")
 
-    def control(self, area: Area) -> np.ndarray:
+    def control(self, area: Area, target: Point) -> np.ndarray:
         detected_points = self.lidar.scan(area, self.x, self.turn, self.size)
+        u = self.controller.control(self.x, self.v, detected_points, target)
+        detected_points = np.transpose(detected_points, axes=(1, 0, 2))
+        diff = detected_points - self.x
+        detected_points = detected_points[np.linalg.norm(diff, axis=2) < self.lidar.radius]
         self.detected_points.append(detected_points.reshape(-1, 2))
-        u = np.ones((len(self.x), 2))
         return u
 
     def update(self, area: Area, target: Point) -> Self:
-        u = self.control(area)
+        u = self.control(area, target)
         self.x = self.x + self.v * self.t + u * self.t * self.t / 2
         self.v = self.v + u * self.t
         self.turn = np.arctan2(self.v[:, 1], self.v[:, 0])
@@ -60,7 +65,6 @@ class Cluster:
         self.track.append(self.x)
         self.angles.append(self.turn)
         self.check_collision(area)
-        # noinspection PyUnreachableCode
         self.steps += 1
         return self
 
