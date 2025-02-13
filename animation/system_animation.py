@@ -25,7 +25,7 @@ class SystemAnimation:
     """
     Class for animating the movement of a cluster in an area with obstacles
     """
-    def __init__(self, area: Area, cluster: Cluster, steps: int, collision_frame: int, robot_vision: bool = False, size: float = 1):
+    def __init__(self, area: Area, cluster: Cluster, robot_vision: bool = False, size: float = 1):
         """
         Parameters
         ----------
@@ -37,7 +37,7 @@ class SystemAnimation:
             Number of steps taken by a cluster and area
         """
         self.static_circle = area.parse()
-        self.cluster_trace, self.angles, self.detected_points_trace = cluster.parse_trace(30)
+        self.cluster_trace, self.angles, self.detected_points_trace, self.frames = cluster.parse_trace(30)
         self.cluster_collections = None
         self.cluster = None
         self.fig = None
@@ -50,8 +50,6 @@ class SystemAnimation:
         self.robots_vision = robot_vision
         if not self.robots_vision:
             self.detected_points_trace = None
-        self.collision_frame = collision_frame
-        self.frames = steps
         self.size = size
 
     def start(self) -> Self:
@@ -108,6 +106,7 @@ class SystemAnimation:
         tmp = np.random.randint(0, 1000)
         filename = str(tmp) + '.mp4'
 #        animation.save(filename, writer=writer)
+       # plt.grid()
         plt.show()
         return
 

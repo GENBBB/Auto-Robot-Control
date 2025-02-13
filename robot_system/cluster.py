@@ -33,19 +33,20 @@ class Cluster:
         self.angles = []
         self.detected_points = []
 
-    def check_collision(self, area: Optional[Area]) -> None:
+    def is_collision(self, area: Optional[Area]) -> bool:
         for i in range(len(self.x) - 1):
             for j in range(i + 1, len(self.x)):
                 if np.linalg.norm(self.x[i] - self.x[j]) < 2 * self.size:
-                    pass
-              #      raise RuntimeError("There was a collision with a robot")
+                    print("There was a collision with a robot")
+                    return True
         if area is not None:
             for i in range(len(self.x)):
                 for obj in area.obstacles:
                     if type(obj) is Circle:
                         if np.linalg.norm(self.x[i] - obj.point) < self.size + obj.size:
-                            pass
-                        #    raise RuntimeError("There was a collision with a obstacle")
+                            print("There was a collision with a obstacle")
+                            return True
+        return False
 
     def control(self, area: Area, target: Point) -> np.ndarray:
         detected_points = self.lidar.scan(area, self.x, self.turn, self.size)
@@ -64,16 +65,23 @@ class Cluster:
 
         self.track.append(self.x)
         self.angles.append(self.turn)
-        self.check_collision(area)
         self.steps += 1
         return self
+
+    def is_coming(self, target: Point, size: float) -> bool:
+        diff = target - self.x
+        distance = np.linalg.norm(diff, axis=1)
+        res = np.all(distance < size)
+        if res:
+            print("Cluster is coming")
+        return np.all(distance < size)
 
     def parse_trace(self, fps: int):
         frames = [i for i in range(0, self.steps, round(self.frequency / fps))]
         track = [self.track[i] for i in frames]
         angles = [self.angles[i] for i in frames]
         detected_points = [self.detected_points[i] for i in frames]
-        return track, angles, detected_points
+        return track, angles, detected_points, len(frames)
 
     def arrangement(self, start_area: Point, size_start_area: float) -> Self:
         for i in range(len(self.x)):
