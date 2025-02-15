@@ -20,7 +20,7 @@ class Lidar:
         self.directions = None
         self.intersections = None
 
-    def find_intersections(self, c_x: np.ndarray, c_r: np.ndarray, x: np.ndarray) -> np.ndarray:
+    def scan_circles(self, c_x: np.ndarray, c_r: np.ndarray, x: np.ndarray) -> np.ndarray:
         oc = c_x[:, None, None, :] - x[None, :, None, :]
         directions = np.tile(self.directions, (c_x.shape[0], 1, 1, 1))
         proj = np.einsum('ijkl,ijkl->ijk', oc, directions)
@@ -57,4 +57,4 @@ class Lidar:
                 c_r.append(obj.size)
         c_x = np.array(c_x)
         c_r = np.array(c_r)
-        return self.find_intersections(c_x, c_r, x)
+        return self.scan_circles(c_x, c_r, x)
