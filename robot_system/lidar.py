@@ -20,36 +20,7 @@ class Lidar:
         self.directions = None
         self.intersections = None
 
-    def scan_circle(self, circle: Circle, x:np.ndarray) -> np.ndarray:
-        cx, cy = circle.point
-        r = circle.size
-
-        oc = np.array([cx, cy]) - x[:, None, :]
-     #   print("Shape")
-     #   print(oc.shape)
-     #   print(self.directions.shape)
-        proj = np.einsum('ijk,ijk->ij', oc, self.directions)
-      #  print(proj.shape)
-     #   proj = np.einsum('ijk,ijk->ij', oc, self.directions)
-      #  print(proj.shape)
-
-        oc_norm2 = np.sum(oc ** 2, axis=2)
-        disc = proj ** 2 - oc_norm2 + r ** 2
-
-        valid = disc >= 0
-        sqrt_disc = np.sqrt(np.maximum(disc, 0))
-
-        t1 = proj - sqrt_disc
-        t2 = proj + sqrt_disc
-        t_min = np.where((0 < t1) & (t1 < self.radius) & valid, t1, np.where((0 < t2) & (t2 < self.radius) & valid, t2, np.inf))
-
-        mask = t_min < np.linalg.norm(self.intersections - x[:, None, :], axis=2)
-        self.intersections[mask, :] = (x[:, None, :] + t_min[..., None] * self.directions)[mask, :]
-
-        return self.intersections
-
     def find_intersections(self, c_x: np.ndarray, c_r: np.ndarray, x: np.ndarray) -> np.ndarray:
-
         oc = c_x[:, None, None, :] - x[None, :, None, :]
         directions = np.tile(self.directions, (c_x.shape[0], 1, 1, 1))
         proj = np.einsum('ijkl,ijkl->ijk', oc, directions)
@@ -78,10 +49,6 @@ class Lidar:
         rotated_angles = self.angles + turn
         self.directions = np.stack((np.cos(rotated_angles), np.sin(rotated_angles)), axis=-1)
 
-      #  for obj in area.obstacles:
-      #      if type(obj) is Circle:
-      #          self.scan_circle(obj, x)
-       # return self.intersections
         c_x = []
         c_r = []
         for obj in area.obstacles:
@@ -90,5 +57,4 @@ class Lidar:
                 c_r.append(obj.size)
         c_x = np.array(c_x)
         c_r = np.array(c_r)
-        self.find_intersections(c_x, c_r, x)
         return self.find_intersections(c_x, c_r, x)
