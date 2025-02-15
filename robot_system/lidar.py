@@ -2,6 +2,7 @@ import math
 from typing import Any
 
 from numpy import ndarray, dtype
+from scipy.optimize import direct
 from skspatial.objects import Point, Line
 import numpy as np
 
@@ -12,33 +13,82 @@ import geometry as geo
 class Lidar:
     def __init__(self, lidar_settings: dict) -> None:
         self.radius = lidar_settings['radius']
-        self.lidar_parts = lidar_settings['lidar_parts']
-        self.lidar_angle = 2 * math.pi / self.lidar_parts
-        self.rays = np.full((self.lidar_parts, 2), Point([0, 0]))
+        self.n_rays = lidar_settings['lidar_parts']
+        self.lidar_angle = 2 * math.pi / self.n_rays
 
-    def detected_circle(self, circle: Circle, pos, turn, rays: np.ndarray) -> np.ndarray or None:
-        if circle.point.distance_point(pos) <= self.radius + circle.size:
-            try:
-                min_angle, max_angle = geo.viewing_angels_circle(pos, circle.point, circle.size)
-            except ValueError:
-                return None
-            alpha = math.floor((min_angle - turn) / self.lidar_angle)
-            beta = math.ceil((max_angle - turn) / self.lidar_angle)
-            angles = np.linspace(alpha * self.lidar_angle + turn, beta * self.lidar_angle + turn, beta - alpha + 1)
-            for i in range(0, beta - alpha + 1):
-                line = Line(pos, [np.cos(angles[i]), np.sin(angles[i])])
-                intersect = circle.intersection(line, pos)
-                ind = (i+alpha) % self.lidar_parts
-                if intersect is not None and intersect.distance_point(pos) <= np.linalg.norm(pos - rays[ind]):
-                    rays[ind] = intersect
-        return rays
+        self.angles = np.linspace(0, 2 * np.pi, self.n_rays, endpoint=False)
+        self.directions = None
+        self.intersections = None
 
-    def scan(self, area: Area, x: np.ndarray, turn: np.ndarray, size: float) -> np.ndarray:
-        self.rays = np.empty((len(x), self.lidar_parts, 2))
-        for i in range(len(self.rays)):
-            self.rays[i] = np.full((self.lidar_parts, 2), x[i] + [2 * self.radius, 0])
-        for i in range(len(self.rays)):
-            for obj in area.obstacles:
-                if type(obj) is Circle:
-                    self.rays[i] = self.detected_circle(obj, x[i], turn[i], self.rays[i])
-        return self.rays
+    def scan_circle(self, circle: Circle, x:np.ndarray) -> np.ndarray:
+        cx, cy = circle.point
+        r = circle.size
+
+        oc = np.array([cx, cy]) - x[:, None, :]
+     #   print("Shape")
+     #   print(oc.shape)
+     #   print(self.directions.shape)
+        proj = np.einsum('ijk,ijk->ij', oc, self.directions)
+      #  print(proj.shape)
+     #   proj = np.einsum('ijk,ijk->ij', oc, self.directions)
+      #  print(proj.shape)
+
+        oc_norm2 = np.sum(oc ** 2, axis=2)
+        disc = proj ** 2 - oc_norm2 + r ** 2
+
+        valid = disc >= 0
+        sqrt_disc = np.sqrt(np.maximum(disc, 0))
+
+        t1 = proj - sqrt_disc
+        t2 = proj + sqrt_disc
+        t_min = np.where((0 < t1) & (t1 < self.radius) & valid, t1, np.where((0 < t2) & (t2 < self.radius) & valid, t2, np.inf))
+
+        mask = t_min < np.linalg.norm(self.intersections - x[:, None, :], axis=2)
+        self.intersections[mask, :] = (x[:, None, :] + t_min[..., None] * self.directions)[mask, :]
+
+        return self.intersections
+
+    def find_intersections(self, c_x: np.ndarray, c_r: np.ndarray, x: np.ndarray) -> np.ndarray:
+
+        oc = c_x[:, None, None, :] - x[None, :, None, :]
+        directions = np.tile(self.directions, (c_x.shape[0], 1, 1, 1))
+        proj = np.einsum('ijkl,ijkl->ijk', oc, directions)
+
+        oc_norm2 = np.sum(oc ** 2, axis=3)
+        r2 = c_r[:, None, None] ** 2
+        disc = proj ** 2 - oc_norm2 + r2
+
+        valid = disc >= 0
+        sqrt_disc = np.sqrt(np.maximum(disc, 0))
+
+        t1 = proj - sqrt_disc
+        t2 = proj + sqrt_disc
+
+        t_min = np.where((0 < t1) & (t1 < self.radius) & valid, t1,
+                         np.where((0 < t2) & (t2 < self.radius) & valid, t2, np.inf))
+
+        best_t = np.min(t_min, axis=0)
+        intersections = x[:, None, :] + best_t[..., None] * directions
+
+        return intersections
+
+    def scan(self, area: Area, x: np.ndarray, turn: np.ndarray) -> np.ndarray:
+        self.intersections = np.full((x.shape[0], self.n_rays, 2), np.inf)
+        turn = turn.reshape(-1, 1)
+        rotated_angles = self.angles + turn
+        self.directions = np.stack((np.cos(rotated_angles), np.sin(rotated_angles)), axis=-1)
+
+      #  for obj in area.obstacles:
+      #      if type(obj) is Circle:
+      #          self.scan_circle(obj, x)
+       # return self.intersections
+        c_x = []
+        c_r = []
+        for obj in area.obstacles:
+            if type(obj) is Circle:
+                c_x.append(obj.point)
+                c_r.append(obj.size)
+        c_x = np.array(c_x)
+        c_r = np.array(c_r)
+        self.find_intersections(c_x, c_r, x)
+        return self.find_intersections(c_x, c_r, x)

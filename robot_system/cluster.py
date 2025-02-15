@@ -19,7 +19,7 @@ class Cluster:
                  lidar_settings: Optional[dict] = None, controller_settings: Optional[dict] = None) -> None:
         self.x = np.empty((n, 2))
         self.v = np.zeros((n, 2))
-        self.turn = np.empty(n)
+        self.turn = np.zeros(n)
 
         self.size = size
         self.lidar = Lidar(lidar_settings)
@@ -49,11 +49,8 @@ class Cluster:
         return False
 
     def control(self, area: Area, target: Point) -> np.ndarray:
-        detected_points = self.lidar.scan(area, self.x, self.turn, self.size)
+        detected_points = self.lidar.scan(area, self.x, self.turn)
         u = self.controller.control(self.x, self.v, detected_points, target)
-        detected_points = np.transpose(detected_points, axes=(1, 0, 2))
-        diff = detected_points - self.x
-        detected_points = detected_points[np.linalg.norm(diff, axis=2) < self.lidar.radius]
         self.detected_points.append(detected_points.reshape(-1, 2))
         return u
 

@@ -42,10 +42,13 @@ distance_rob = 3
 convex = True
 
 if __name__ == '__main__':
+    start_time = time.time()
     map_obj = Area()
     np.random.seed(seed)
     map_obj.random_static_set()
-
+ #   for i in range(20):
+ #       map_obj.add(Circle(Point([10 + i * 5, 20 + i * 5]), 5))
+ #       map_obj.add(Circle(Point([10 + i * 5, -5 + i * 5]), 5))
 
     lidar_settings = {'lidar_parts': lidar_parts, 'radius': radius}
 
@@ -61,5 +64,7 @@ if __name__ == '__main__':
         cluster.update(map_obj, Point([x_end, y_end]))
         if cluster.is_collision(map_obj) or cluster.is_coming(Point([x_end, y_end]), size_end_area):
             break
+    print("Time: ", time.time() - start_time)
+
     animation = SystemAnimation(map_obj, cluster, robot_vision=True, size=robot_size)
     animation.start()
