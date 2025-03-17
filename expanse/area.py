@@ -1,15 +1,9 @@
-from typing import Self, TypeVar
+from typing import Self, TypeVar, List
 
 import numpy as np
 
-from config import config
 from .obstacles import Obstacle, Circle
 
-n_obj = int(config['Map']['n_obj'])
-min_size = float(config['Map']['min_size'])
-max_size = float(config['Map']['max_size'])
-width = float(config['Config']['width'])
-height = float(config['Config']['height'])
 
 obstacles_like = TypeVar('obstacles_like', bound=Circle)
 
@@ -29,7 +23,7 @@ class Area:
             obstacles = []
         self.obstacles = obstacles
 
-    def random_static_set(self) -> Self:
+    def random_static_set(self, area, n_obj: int, min_size: float, max_size: float, excluded_area: List or None = None) -> Self:
         """
         В процессе.
         Заполняется пока только кругами
@@ -37,7 +31,7 @@ class Area:
         -------
 
         """
-        self.obstacles = [Circle.get_random(min_size, max_size, (0, width), (0, height)) for i in range(n_obj)]
+        self.obstacles = [Circle.get_random(area, min_size, max_size, excluded_area) for i in range(n_obj)]
         return self
 
     def add(self, obs: Obstacle or list[Obstacle]) -> Self:

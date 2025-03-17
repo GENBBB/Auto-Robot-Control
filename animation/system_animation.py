@@ -16,7 +16,7 @@ import numpy as np
 from typing import Self
 import math
 
-interval = 30
+interval = 15
 width = float(config['Config']['width'])
 height = float(config['Config']['height'])
 
@@ -37,7 +37,7 @@ class SystemAnimation:
             Number of steps taken by a cluster and area
         """
         self.static_circle = area.parse()
-        self.cluster_trace, self.angles, self.detected_points_trace, self.frames = cluster.parse_trace(30)
+        self.cluster_trace, self.angles, self.detected_points_trace, self.beta_track, self.frames = cluster.parse_trace(30)
         self.cluster_collections = None
         self.cluster = None
         self.fig = None
@@ -60,7 +60,8 @@ class SystemAnimation:
 
         """
         self.fig, self.ax = plt.subplots()
-        self.ax.set(xlim=[0, width], ylim=[0, height], xticks=range(0, int(width), 5), yticks=range(0, int(height), 5))
+        self.ax.set(xlim=[0, width], ylim=[0, height], xticks=range(0, int(width), int(width) // 20),
+                    yticks=range(0, int(height), int(height) // 20))
         # Drawing map
         circle_coll = collections.EllipseCollection(2 * self.static_circle['size'], 2 * self.static_circle['size'],
                                                     angles=0, units='xy',
@@ -98,10 +99,13 @@ class SystemAnimation:
             self.scatter = plt.scatter(self.detected_points_trace[0][:, 0], self.detected_points_trace[0][:, 1],
                                        s=0.5, c='r')
             self.ax.add_collection(self.scatter)
+            self.beta = plt.scatter(self.beta_track[0][:, 0], self.beta_track[0][:, 1], s=5, c='b')
+            self.ax.add_collection(self.beta)
           #  self.line = collections.LineCollection(self.detection_line_trace[0], colors='r')
           #  self.ax.add_collection(self.line)
 
-        animation = FuncAnimation(self.fig, self.update, interval=interval, frames=self.frames, blit=False, repeat=False)
+
+        animation = FuncAnimation(self.fig, self.update, interval=interval, frames=self.frames, blit=False, repeat=True)
         writer = FFMpegWriter(fps=30, metadata=dict(artist='Me'), bitrate=1800)
         tmp = np.random.randint(0, 1000)
         filename = str(tmp) + '.mp4'
@@ -111,9 +115,11 @@ class SystemAnimation:
         return
 
     def update(self, frame):
+        frame = frame % self.frames
  #       self.scatter_trace.set(offsets=self.trace[frame])
         if self.robots_vision:
             self.scatter.set(offsets=self.detected_points_trace[frame])
+            self.beta.set(offsets=self.beta_track[frame])
           #  self.line.set_paths(self.detection_line_trace[frame])
         self.cluster.set_paths(self.cluster_collections[frame])
         return self.cluster

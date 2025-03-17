@@ -1,14 +1,9 @@
 import time
 
-import robot_system as rob_sys
-from expanse.area import Area
-from expanse.obstacles import Circle
-from animation import SystemAnimation
-from skspatial.objects import Point
 from config import config
 import math
-import numpy as np
-from collections import Counter
+
+from diff_ev import ClusterDifferentialEvolution
 
 frequency = int(config['Config']['frequency'])
 steps = math.ceil(float(config['Config']['duration']) * frequency)
@@ -23,48 +18,69 @@ robot_size = float(config['Robot']['size'])
 radius = float(config['Robot']['radius'])
 lidar_parts = int(config['Robot']['lidar_parts'])
 seed = config['Config']['seed']
+n_obj = int(config['Map']['n_obj'])
+min_size = float(config['Map']['min_size'])
+max_size = float(config['Map']['max_size'])
+width = float(config['Config']['width'])
+height = float(config['Config']['height'])
 if seed == 'None':
     seed = None
 else:
     seed = int(seed)
-gamma = [7.0, 4.0]
-beta = [4.0, 0.0]
-alpha = [0.5, 0.5]
-delta = [50.0, 50.0]
-rep = 1.0
-h = 0.5
-eps = 0.00001
-a = 1
-b = 10
-distance = 6
-distance_obj = 1.5
-distance_rob = 3
-convex = True
 
-if __name__ == '__main__':
+def ex_1():
+    experiment = {'n_obj': 20, 'min_size': min_size, 'max_size': max_size, 'n_robots': 1,
+                  'area': (width, height), 'start': (x_start, y_start), 'target': (x_end, y_end),
+                  'start_size': size_start_area, 'target_size': size_end_area, 'max_step': steps,
+                  'excluded_area': [((x_start - size_start_area, y_start - size_start_area),
+                                     (x_start + size_start_area, y_start + size_start_area))]}
+
+    return experiment
+
+def ex_2():
+    experiment = {'n_obj': 20, 'min_size': min_size, 'max_size': max_size, 'n_robots': 5,
+                  'area': (width, height), 'start': (x_start, y_start), 'target': (x_end, y_end),
+                  'start_size': size_start_area, 'target_size': size_end_area, 'max_step': steps,
+                  'excluded_area': [((x_start - size_start_area, y_start - size_start_area),
+                                     (x_start + size_start_area, y_start + size_start_area))]}
+
+    return experiment
+
+def ex_3():
+    experiment = {'n_obj': 20, 'min_size': min_size, 'max_size': max_size, 'n_robots': 15,
+                  'area': (width, height), 'start': (x_start, y_start), 'target': (x_end, y_end),
+                  'start_size': 20, 'target_size': size_end_area, 'max_step': steps,
+                  'excluded_area': [((x_start - size_start_area, y_start - size_start_area),
+                                     (x_start + size_start_area, y_start + size_start_area))]}
+
+    return experiment
+
+def f():
     start_time = time.time()
-    map_obj = Area()
-    np.random.seed(seed)
-    map_obj.random_static_set()
- #   for i in range(20):
- #       map_obj.add(Circle(Point([10 + i * 5, 20 + i * 5]), 5))
- #       map_obj.add(Circle(Point([10 + i * 5, -5 + i * 5]), 5))
 
-    lidar_settings = {'lidar_parts': lidar_parts, 'radius': radius}
+    experiments = [ex_1(), ex_2(), ex_3()]
 
-    controller_settings = {'gamma': gamma, 'beta': beta, 'alpha': alpha, 'delta': delta, 'eps': eps, 'h': h, 'rep': rep,
-                           'a': a, 'b': b, 'distance': distance, 'distance_obj': distance_obj,
-                           'distance_rob': distance_rob, 'radius': radius}
+    lidar_settings = {'radius': radius, 'lidar_parts': lidar_parts}
+    splitter_settings = {'convex': False, 'radius': radius, 'merge_distance': robot_size}
 
-    cluster = rob_sys.Cluster(n_robots, robot_size, frequency, lidar_settings, controller_settings)
-    cluster.arrangement(Point([x_start, y_start]), size_start_area)
-    collision_frame = None
-    for i in range(steps):
-        print("Step ", i)
-        cluster.update(map_obj, Point([x_end, y_end]))
-        if cluster.is_collision(map_obj) or cluster.is_coming(Point([x_end, y_end]), size_end_area):
-            break
+    static_settings = {'robot_size': robot_size, 'frequency': frequency, 'lidar_settings': lidar_settings,
+                       'splitter_settings': splitter_settings, 'formation_distance': 3 * robot_size}
+
+    bounds = {'gain': 10, 'min_letter': 1e-6, 'max_letter': 10, 'min_eps': 1e-4, 'max_eps': 1e-4,
+              'min_h': 0.5, 'max_h': 0.5, 'min_gamma': 3, 'repulsive_distance_min': [2 * robot_size, robot_size],
+              'radius': radius}
+
+    evolution = ClusterDifferentialEvolution(static_settings, bounds, experiments, pop_size=50,
+                                             max_generations=20, seed=seed, title='TO', cr=0.95, f=0.5)
+
+    evolution.run()
+    settings, fittness = evolution.get_current_best()
+    evolution.animation_best()
+    print('Params:')
+    print(settings)
+    print('Fitness:', fittness)
     print("Time: ", time.time() - start_time)
 
-    animation = SystemAnimation(map_obj, cluster, robot_vision=True, size=robot_size)
-    animation.start()
+
+if __name__ == '__main__':
+    f()
