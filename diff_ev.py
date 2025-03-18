@@ -27,6 +27,7 @@ class ClusterDifferentialEvolution:
         self.fitness = None
         self.best_solution = None
         self.best_fitness = float('inf')
+        self.frequency = static_settings['frequency']
 
         columns = ['generation', 'params', 'T', 'target_distance', 'dead', 'convexity']
         self.df = pd.DataFrame(columns=columns)
@@ -77,8 +78,8 @@ class ClusterDifferentialEvolution:
     @staticmethod
     def score(time: np.ndarray, target_distance: np.ndarray, dead: np.ndarray, convexity: np.ndarray) -> float:
         score = np.mean(target_distance, dtype=np.float64)
-        score += np.mean(time, dtype=np.float64)
-        score += np.mean(dead, dtype=np.float64) * 2000
+        score += np.mean(time, dtype=np.float64) / 50 * 10
+        score += np.mean(dead, dtype=np.float64) * 1000
         print(score)
         return score
 

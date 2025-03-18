@@ -49,7 +49,7 @@ def ex_2():
 def ex_3():
     experiment = {'n_obj': 20, 'min_size': min_size, 'max_size': max_size, 'n_robots': 15,
                   'area': (width, height), 'start': (x_start, y_start), 'target': (x_end, y_end),
-                  'start_size': 20, 'target_size': size_end_area, 'max_step': steps,
+                  'start_size': 20, 'target_size': 20, 'max_step': steps,
                   'excluded_area': [((x_start - size_start_area, y_start - size_start_area),
                                      (x_start + size_start_area, y_start + size_start_area))]}
 
@@ -71,7 +71,7 @@ def f():
               'radius': radius}
 
     evolution = ClusterDifferentialEvolution(static_settings, bounds, experiments, pop_size=50,
-                                             max_generations=20, seed=seed, title='TO', cr=0.95, f=0.5)
+                                             max_generations=50, seed=seed, title='TO', cr=0.95, f=0.5)
 
     evolution.run()
     settings, fittness = evolution.get_current_best()
