@@ -7,7 +7,6 @@ from .splitter import Splitter
 from .lidar import Lidar
 from .controller import Controller
 from expanse.area import Area
-from expanse.obstacles import Circle
 
 
 class Cluster:
@@ -57,13 +56,14 @@ class Cluster:
                         self.live[j] = False
         if area is not None:
             for i in range(len(self.x)):
-                for obj in area.obstacles:
-                    if type(obj) is Circle:
-                        if np.linalg.norm(self.x[i] - obj.point) < self.size + obj.size:
-                            if self.live[i]:
-                                #print("There was a collision with a obstacle")
-                                self.live[i] = False
-                                self.v[i] = 0
+                for j in range(len(area.obstacles.x)):
+                    point = area.obstacles.x[j]
+                    size = area.obstacles.size[j]
+                    if np.linalg.norm(self.x[i] - point) < self.size + size:
+                        if self.live[i]:
+                            #print("There was a collision with a obstacle")
+                            self.live[i] = False
+                            self.v[i] = 0
 
     def beta_position(self, obstacles: List[List[np.ndarray]], x: np.ndarray) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         if len(obstacles) != x.shape[0]:
@@ -108,7 +108,8 @@ class Cluster:
         obstacles = self.splitter.obstacle_split(detected_points, self.x[self.live])
         beta_position, beta_direction = self.beta_position(obstacles, self.x[self.live])
 
-        u = self.controller.control(self.x[self.live], self.v[self.live], beta_position, beta_direction, target)
+        u = self.controller.control(self.x[self.live], self.v[self.live], beta_position, beta_direction, target,
+                                    self.x, self.v, self.live)
 
         flat_arrays = list(chain.from_iterable(obstacles))
         if not flat_arrays:
@@ -160,7 +161,7 @@ class Cluster:
         return track, angles, detected_points, beta_track, len(frames)
 
     @staticmethod
-    def st_arrangement(n_robots: int, size_robots: int, start_area: np.ndarray,
+    def st_arrangement(n_robots: int, size_robots: float, start_area: np.ndarray,
                        size_start_area: float) -> Tuple[np.ndarray, np.ndarray]:
         x = np.empty((n_robots, 2))
         turn = np.empty(n_robots)
@@ -184,7 +185,7 @@ class Cluster:
             turn[i] = np.random.uniform() * 2 * np.pi
         return x, turn
 
-    def arrangement(self, x: np.ndarray, turn: float) -> Self:
+    def arrangement(self, x: np.ndarray, turn: np.ndarray) -> Self:
         self.x = x
         self.turn = turn
         self.track.append(self.x)
@@ -193,7 +194,7 @@ class Cluster:
         return self
 
     def get_time(self):
-        return self.steps
+        return self.steps / self.frequency
 
     def get_target_distance(self):
         return np.mean(self.target_distance)

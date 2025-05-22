@@ -1,75 +1,156 @@
-import numpy as np
+import random
+import math
 import matplotlib.pyplot as plt
 
 
-def find_intersections(points, circles, n_rays, turns):
-    points = np.array(points)  # (num_points, 2)
-    circles = np.array(circles)  # (num_circles, 3)
-    num_points = points.shape[0]
+def dist(a, b):
+    """Евклидово расстояние между точками a и b."""
+    return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    # Генерация направлений лучей с учетом поворота
-    angles = np.linspace(0, 2 * np.pi, n_rays, endpoint=False)  # (n_rays,)
-    turns = np.array(turns)[:, None]  # (num_points, 1)
-    rotated_angles = angles + turns  # (num_points, n_rays)
 
-    directions = np.stack((np.cos(rotated_angles), np.sin(rotated_angles)), axis=-1)  # (num_points, n_rays, 2)
+def circle_intersections(c1, c2, r):
+    """
+    Пересечение двух кругов радиуса r с центрами c1 и c2.
+    Возвращает список из 0, 1 или 2 точек.
+    """
+    x0, y0 = c1
+    x1, y1 = c2
+    d = dist(c1, c2)
+    if d < 1e-6 or d > 2*r:
+        return []
+    # расстояние от c1 до основания хорды пересечения
+    a = d / 2
+    h = math.sqrt(max(r*r - a*a, 0.0))
+    # точка середины хорды
+    xm = x0 + a*(x1 - x0)/d
+    ym = y0 + a*(y1 - y0)/d
+    # вектор, перпендикулярный c1->c2
+    rx = -(y1 - y0) * (h/d)
+    ry =  (x1 - x0) * (h/d)
+    p1 = (xm + rx, ym + ry)
+    p2 = (xm - rx, ym - ry)
+    return [p1] if h < 1e-6 else [p1, p2]
 
-    # Векторизованный расчет расстояний от точек до центров окружностей
-    oc = circles[:, None, None, :2] - points[None, :, None, :]  # (num_circles, num_points, n_rays, 2)
-    print(oc.shape)
-    print(directions.shape)
-    directions = np.tile(directions, (circles.shape[0], 1, 1, 1))
-    print(directions.shape)
-    proj = np.einsum('ijkl,ijkl->ijk', oc, directions)  # (num_circles, num_points, n_rays)
 
-    oc_norm2 = np.sum(oc ** 2, axis=3)  # (num_circles, num_points, n_rays)
-    r2 = circles[:, None, None, 2] ** 2  # (num_circles, 1, 1)
-    print(r2.shape)
-    disc = proj ** 2 - oc_norm2 + r2  # (num_circles, num_points, n_rays)
+def valid(candidate, pts, d, r, tol=1e-6):
+    """
+    Проверка, что candidate не нарушает правила:
+      для каждой уже стоящей точки p:
+        если dist(candidate, p) < r, то |dist - d| < tol
+    """
+    for p in pts:
+        di = dist(candidate, p)
+        if di < tol:
+            return False
+        if di < r - tol and abs(di - d) > tol:
+            return False
+    return True
 
-    valid = disc >= 0  # Проверяем, есть ли пересечение
-    sqrt_disc = np.sqrt(np.maximum(disc, 0))  # Берем корень из дискриминанта
 
-    t1 = proj - sqrt_disc
-    t2 = proj + sqrt_disc
+def build_points(N=5, d=0.5, r=1.0, r_max=2.0, seed=None):
+    """
+    Итеративно строит N точек по вашему алгоритму с рандомизацией порядка шагов:
+    - 90%: две → одна → далеко;
+    -  5%: одна → далеко → две;
+    -  5%: далеко → две → одна.
+    """
+    if seed is not None:
+        random.seed(seed)
 
-    min_t = np.minimum(t1, t2)
-    min_t[~valid] = np.inf  # Убираем лучи, не пересекающие окружность
+    pts = [(0.0, 0.0), (0.0, d)]  # стартовые точки
 
-    best_t = np.min(min_t, axis=0)  # Берем минимальное t среди всех окружностей
-    intersections = points[:, None, :] + best_t[..., None] * directions  # Вычисляем пересечения
+    while len(pts) < N:
+        constructed = False
+        # выбираем последовательность шагов
+        r_choice = random.random()
+        if r_choice < 0.80:
+            sequence = ['two', 'one', 'none']
+        elif r_choice < 0.90:
+            sequence = ['one', 'none', 'two']
+        else:
+            sequence = ['none', 'two', 'one']
 
-    return intersections
+        # выполняем шаги в выбранном порядке
+        for step in sequence:
+            if constructed:
+                break
+            if step == 'two':
+                # пробуем строить по двум точкам
+                inds = list(range(len(pts)))
+                random.shuffle(inds)
+                for i in inds:
+                    for j in inds:
+                        if i >= j:
+                            continue
+                        for c in circle_intersections(pts[i], pts[j], d):
+                            if valid(c, pts, d, r):
+                                pts.append(c)
+                                constructed = True
+                                break
+                        if constructed:
+                            break
+                    if constructed:
+                        break
 
-def plot_results(points, circles, intersections, n_rays):
-    fig, ax = plt.subplots()
-    ax.set_aspect('equal')
+            elif step == 'one':
+                # пробуем строить по одной точке
+                for _ in range(100):
+                    i = random.randrange(len(pts))
+                    theta = random.random() * 2 * math.pi
+                    c = (pts[i][0] + d*math.cos(theta), pts[i][1] + d*math.sin(theta))
+                    if valid(c, pts, d, r):
+                        pts.append(c)
+                        constructed = True
+                        break
 
-    for cx, cy, r in circles:
-        circle = plt.Circle((cx, cy), r, color='blue', fill=False)
-        ax.add_patch(circle)
+            else:  # 'none'
+                # строим точку далеко от всех (> r)
+                for _ in range(1000):
+                    theta = random.random() * 2 * math.pi
+                    R = random.uniform(r + d, r_max)
+                    c = (R*math.cos(theta), R*math.sin(theta))
+                    if all(dist(c, p) > r for p in pts):
+                        pts.append(c)
+                        constructed = True
+                        break
 
-    points = np.array(points)
-    intersections = np.array(intersections)
-    n_circles = intersections.shape[0]
+        if not constructed:
+            raise RuntimeError(
+                "Не удалось разместить новую точку — попробуйте увеличить r_max или уменьшить N."
+            )
 
-    for i, point in enumerate(points):
-        ax.scatter(*point, color='red', marker='o')
-        for k in range(n_circles):
-            for j in range(n_rays):
-                inter = intersections[k, i, j]
-                if not np.isinf(inter).any():
-                    ax.plot([point[0], inter[0]], [point[1], inter[1]], color='black', linestyle='dashed')
-                    ax.scatter(*inter, color='green', marker='x')
+    return pts
 
-    ax.set_xlim(-5, 10)
-    ax.set_ylim(-5, 10)
-    plt.show()
 
-# Пример использования
-points = [(0, 0), (2, 2)]
-circles = [(3, 3, 2), (-2, 4, 1.5), (5, 0, 3)]
-n_rays = 8
-turns = [0, 0]  # Углы поворота для каждой точки
-intersections = find_intersections(points, circles, n_rays, turns)
-plot_results(points, circles, intersections, n_rays)
+def plot_and_save_points(pts, d, r, filename='points.png', dpi=300):
+    """
+    Визуализация: точки + «короткие» отрезки (dist≈d),
+    сохранение результата в файл.
+    """
+    plt.figure(figsize=(6,6))
+    xs, ys = zip(*pts)
+    plt.scatter(xs, ys, color='k', s=50, zorder=2)
+
+    for i in range(len(pts)):
+        for j in range(i+1, len(pts)):
+            if abs(dist(pts[i], pts[j]) - d) < 1e-6:
+                x0, y0 = pts[i]
+                x1, y1 = pts[j]
+                plt.plot([x0, x1], [y0, y1], 'r-', lw=2, zorder=1)
+    k = r / d
+    plt.axis('equal')
+    plt.savefig(filename, dpi=dpi, bbox_inches='tight')
+    #plt.show()
+    plt.close()
+    print(f"Изображение сохранено в '{filename}'")
+
+
+if __name__ == "__main__":
+    N = 29
+    d = 1.0
+    r = 1.0
+    r_max = 10.0
+    seed = 1
+
+    pts = build_points(N=N, d=d, r=r, r_max=r_max, seed=seed)
+    plot_and_save_points(pts, d, r, filename='points1.0.png')

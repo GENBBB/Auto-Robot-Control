@@ -35,6 +35,12 @@ class Controller:
         self.r_rob = self.sigma_norm(self.robot_radius)
         self.r_f = self.sigma_norm(self.formation_radius)
 
+        self.v_max = controller_settings['v_max']
+        self.gyro = controller_settings['gyro']
+        self.p_imp = controller_settings['p_imp']
+        self.v_max = controller_settings['v_max']
+        self.f = None
+
     @staticmethod
     def gamma_function(z: np.ndarray) -> np.ndarray:
         return z / np.sqrt(1 + z ** 2)
@@ -64,23 +70,27 @@ class Controller:
     def attractive_functions(self, z: np.ndarray) -> np.ndarray:
         return self.bump_function(z / self.r_f) * self.alpha_function(z - self.d_f)
 
-    def alpha_control(self, x: np.ndarray, v: np.ndarray) -> np.ndarray:
+    def alpha_control(self, x: np.ndarray, v: np.ndarray, full_x: np.ndarray, full_v: np.ndarray) -> np.ndarray:
         diff_q = np.full((len(x), len(x), 2), x)
         diff_q = diff_q - np.transpose(diff_q, axes=(1, 0, 2))
 
         diff_p = np.full((len(v), len(v), 2), v)
         diff_p = diff_p - np.transpose(diff_p, axes=(1, 0, 2))
 
+        delta_q = full_x[np.newaxis, :, :] - x[:, np.newaxis, :]
+        delta_v = full_v[np.newaxis, :, :] - v[:, np.newaxis, :]
+
         norm = np.linalg.norm(diff_q, axis=2)
+        norm_delta = np.linalg.norm(delta_q, axis=2)
 
         u_position = (self.attractive_functions(self.sigma_norm(norm)) * diff_q.transpose((2, 0 ,1)) /
                       np.sqrt(1 + self.eps * norm ** 2))
-        u_position_delta = self.repulsive_function_rob(self.sigma_norm(norm)) * diff_q.transpose((2, 0, 1)) / np.sqrt(
-            1 + self.eps * norm ** 2)
+        u_position_delta = (self.repulsive_function_rob(self.sigma_norm(norm_delta)) * delta_q.transpose((2, 0, 1)) /
+                            np.sqrt(1 + self.eps * norm_delta ** 2))
 
 
         u_velocity = self.bump_function(self.sigma_norm(norm) / self.r_f) * diff_p.transpose((2, 0, 1))
-        u_velocity_delta = self.bump_function(self.sigma_norm(norm) / self.r_rob) * diff_p.transpose((2, 0, 1))
+        u_velocity_delta = self.bump_function(self.sigma_norm(norm_delta) / self.r_rob) * delta_v.transpose((2, 0, 1))
 
         u_position = np.sum(u_position, axis=2)
         u_velocity = np.sum(u_velocity, axis=2)
@@ -123,7 +133,7 @@ class Controller:
         return result
 
     def beta_control(self, x : np.ndarray, v: np.ndarray, beta_position: List[np.ndarray],
-                     beta_direction: List[np.ndarray]) -> np.ndarray:
+                     beta_direction: List[np.ndarray], live: np.ndarray, full_v) -> np.ndarray:
         n = len(beta_position)
         max_neighbors = max(len(neighbors) for neighbors in beta_position)
 
@@ -153,19 +163,63 @@ class Controller:
         u_position = np.sum(u_position, axis=2)
         u_velocity = np.sum(u_velocity, axis=2)
         u = self.beta[0] * u_position + self.beta[1] * u_velocity
-        return u.transpose((1,0))
+        u = u.transpose((1, 0))
+        u_position = u_position.transpose((1, 0))
+        F = np.column_stack((-u_position[:, 1], u_position[:, 0]))
+        norm = np.linalg.norm(full_v, axis=1)
+        F = F[norm[live] < self.p_imp]
+        if self.f is None:
+            self.f = np.zeros_like(full_v)
+        i = np.linalg.norm(F, axis=1, keepdims=True)
+        i[i == 0] = 1
+        self.f[live & (norm < self.p_imp)] = F / i
+        u += self.gyro[0] * self.f[live]
+        self.f *= self.gyro[1]
+        return u
 
     def gamma_control(self, x: np.ndarray, v: np.ndarray, end_area: np.ndarray) -> np.ndarray:
         diff = x - end_area
         return -self.gamma[0] * diff / np.sqrt(1 + np.linalg.norm(diff)) - self.gamma[1] * v
 
-    def gyro_control(self, beta_control: np.ndarray) -> np.ndarray:
-        pass
+    def gyro_control(self, x: np.ndarray, v: np.ndarray, beta_position: List[np.ndarray]) -> np.ndarray:
+        n = len(beta_position)
+        max_neighbors = max(len(neighbors) for neighbors in beta_position)
+        if max_neighbors == 0:
+            return np.zeros_like(x)
+        closest = np.full((n, max_neighbors, 2), np.inf)
+        for i in range(n):
+            m = len(beta_position[i])
+            if m > 0:
+                closest[i, :m] = beta_position[i]
+        closest_id = np.argmin(np.linalg.norm(closest, axis=2), axis=1)
+        closest = closest[np.arange(n), closest_id]
+        d = closest - x
+        u_g = np.zeros_like(d)
+        d[closest == np.inf] = 0
+        distance = np.linalg.norm(d, axis=1)
+
+        # Условия активации
+        mask_distance = (distance > 0)
+        dot_product = np.sum(d * v, axis=1)
+        mask_dot = dot_product > 0
+        mask = mask_distance & mask_dot
+
+        det = d[:, 0] * v[:, 1] - d[:, 1] * v[:, 0]
+
+        omega = np.zeros(len(x))
+        omega[mask] = (np.pi * self.v_max / distance[mask]) * np.sign(det[mask])
+
+        u_g[:, 0] = -omega * v[:, 1]
+        u_g[:, 1] = omega * v[:, 0]
+
+        return u_g
+
 
     def control(self, x: np.ndarray, v: np.ndarray, beta_position: List[np.ndarray], beta_direction: List[np.ndarray],
-                target: np.ndarray) -> np.ndarray:
+                target: np.ndarray, full_x: np.ndarray, full_v, live) -> np.ndarray:
         u = np.zeros_like(x)
-        u += self.alpha_control(x, v)
-        u += self.beta_control(x, v, beta_position, beta_direction)
+        u += self.alpha_control(x, v, full_x, full_v)
         u += self.gamma_control(x, v, target)
+        u += self.gyro_control(x, v, beta_position)
+        u += self.beta_control(x, v, beta_position, beta_direction, live, full_v)
         return u

@@ -1,3 +1,4 @@
+from copy import copy, deepcopy
 from typing import List, Tuple
 
 import numpy as np
@@ -21,7 +22,7 @@ class ClusterDifferentialEvolution:
         self.max_generations = max_generations
         self.F = f
         self.CR = cr
-        self.dimensions = 17
+        self.dimensions = 21
 
         self.population = None
         self.fitness = None
@@ -43,7 +44,7 @@ class ClusterDifferentialEvolution:
             area = Area()
             area.random_static_set(experiment['area'], experiment['n_obj'], experiment['min_size'],
                                    experiment['max_size'],
-                                   experiment['excluded_area'])
+                                   experiment['excluded_area'], experiment['type'])
             self.areas.append(area)
 
     def _param_to_dict(self, param):
@@ -60,7 +61,10 @@ class ClusterDifferentialEvolution:
                    'object_radius': param[14],
                    'formation_distance': self.static_settings['formation_distance'],
                    'robot_distance': param[15],
-                   'object_distance': param[16]}
+                   'object_distance': param[16],
+                   'v_max': param[17],
+                   'gyro': param[18:20],
+                   'p_imp': param[20]}
         return setting
 
     def add_to_df(self, generation: int, param: np.ndarray, time: np.ndarray, target_distance: np.ndarray,
@@ -77,9 +81,10 @@ class ClusterDifferentialEvolution:
 
     @staticmethod
     def score(time: np.ndarray, target_distance: np.ndarray, dead: np.ndarray, convexity: np.ndarray) -> float:
-        score = np.mean(target_distance, dtype=np.float64)
-        score += np.mean(time, dtype=np.float64) / 50 * 10
-        score += np.mean(dead, dtype=np.float64) * 1000
+        score = np.mean(target_distance, dtype=np.float64) * 20
+        score += np.mean(time, dtype=np.float64) * 100
+        score += np.mean(dead, dtype=np.float64) * 400
+        score += np.mean(convexity, dtype=np.float64) * 400
         print(score)
         return score
 
@@ -91,6 +96,7 @@ class ClusterDifferentialEvolution:
         cluster.arrangement(np.copy(arrangement[0]), np.copy(arrangement[1]))
         for j in range(experiment['max_step']):
             cluster.update(area, experiment['target'])
+            area.update()
             if cluster.is_coming(experiment['target'], experiment['target_size']):
                 break
         time = cluster.get_time()
@@ -99,7 +105,8 @@ class ClusterDifferentialEvolution:
         convexity = cluster.get_convexity()
         print(time, target_distance, dead, convexity)
         if animation_flag:
-            animation = SystemAnimation(area, cluster, True, self.static_settings['robot_size'])
+            animation = SystemAnimation(area, cluster, True, self.static_settings['robot_size'],
+                                        experiment['area'][0], experiment['area'][1])
             animation.start()
         return time, target_distance, dead, convexity
 
@@ -111,22 +118,29 @@ class ClusterDifferentialEvolution:
         convexity = np.empty(len(self.experiments))
         print("Version #", version)
         for i in range(len(self.experiments)):
-            result = self._map(setting, self.areas[i], experiment=self.experiments[i], arrangement=self.arrangements[i])
+            result = self._map(setting, deepcopy(self.areas[i]), experiment=self.experiments[i], arrangement=self.arrangements[i],
+                               animation_flag=False)
             time[i], target_distance[i], dead[i], convexity[i] = result
         self.add_to_df(generation, param, time, target_distance, dead, convexity)
         return self.score(time, target_distance, dead, convexity)
 
     def _random_param(self):
-        gain = np.random.uniform(0, self.bounds['gain'], 4)
-        gamma = np.random.uniform(self.bounds['min_gamma'], self.bounds['gain'], 2)
-        delta = np.random.uniform(0, self.bounds['gain'], 2)
+        alpha = np.random.uniform(self.bounds['min_alpha'], self.bounds['max_alpha'], 2)
+        beta = np.random.uniform(self.bounds['min_beta'], self.bounds['max_beta'], 2)
+        gamma = np.random.uniform(self.bounds['min_gamma'], self.bounds['max_gamma'], 2)
+        delta = np.random.uniform(self.bounds['min_delta'], self.bounds['max_delta'], 2)
         h = np.random.uniform(self.bounds['min_h'], self.bounds['max_h'], 1)
         eps = np.random.uniform(self.bounds['min_eps'], self.bounds['max_eps'], 1)
-        letter = np.random.uniform(self.bounds['min_letter'], self.bounds['max_letter'], 2)
+        a = np.random.uniform(self.bounds['min_a'], self.bounds['max_a'], 1)
+        b = np.random.uniform(self.bounds['min_b'], self.bounds['max_b'], 1)
         formation_radius = np.random.uniform(self.static_settings['formation_distance'], self.bounds['radius'], 1)
         repulsive_radius = np.random.uniform(self.bounds['repulsive_distance_min'], self.bounds['radius'], 2)
-        repulsive_distance = np.random.uniform(self.bounds['repulsive_distance_min'], repulsive_radius, 2)
-        param = np.concatenate((gain, gamma, delta, h, eps, letter, formation_radius, repulsive_radius, repulsive_distance))
+        repulsive_distance = np.random.uniform(self.bounds['repulsive_distance_min'], self.bounds['repulsive_distance_max'], 2)
+        v_max = np.random.uniform(self.bounds['v_min'], self.bounds['v_max'], 1)
+        gyro = np.random.uniform(self.bounds['g_min'], self.bounds['g_max'], 2)
+        p_imp = np.random.uniform(self.bounds['p_min'], self.bounds['p_max'], 1)
+        param = np.concatenate((alpha, beta, gamma, delta, h, eps, a, b, formation_radius,
+                                repulsive_radius, repulsive_distance, v_max, gyro, p_imp))
         return param
 
     def _initialize_population(self):
@@ -150,15 +164,20 @@ class ClusterDifferentialEvolution:
 
     def _clip_within_bounds(self, individual):
         """Ограничение значений переменных в заданных границах"""
-        individual[:4] = np.clip(individual[:4], 0, self.bounds['gain'])
-        individual[4:6] = np.clip(individual[4:6], self.bounds['min_gamma'], self.bounds['gain'])
-        individual[6:8] = np.clip(individual[6:8], 0, self.bounds['gain'])
+        individual[:2] = np.clip(individual[:2], self.bounds['min_alpha'], self.bounds['max_alpha'])
+        individual[2:4] = np.clip(individual[2:4], self.bounds['min_beta'], self.bounds['max_beta'])
+        individual[4:6] = np.clip(individual[4:6], self.bounds['min_gamma'], self.bounds['max_gamma'])
+        individual[6:8] = np.clip(individual[6:8], self.bounds['min_delta'], self.bounds['max_delta'])
         individual[8] = np.clip(individual[8], self.bounds['min_h'], self.bounds['max_h'])
         individual[9] = np.clip(individual[9], self.bounds['min_eps'], self.bounds['max_eps'])
-        individual[10:12] = np.clip(individual[10:12], self.bounds['min_letter'], self.bounds['max_letter'])
+        individual[10] = np.clip(individual[10], self.bounds['min_a'], self.bounds['max_a'])
+        individual[11] = np.clip(individual[11], self.bounds['min_b'], self.bounds['max_b'])
         individual[12] = np.clip(individual[12], self.static_settings['formation_distance'], self.bounds['radius'])
-        individual[13:15] = np.clip(individual[13:15], self.bounds['repulsive_distance_min'], self.bounds['radius'])
+        individual[13:15] = np.clip(individual[13:15], self.bounds['repulsive_distance_min'], self.bounds['repulsive_distance_max'])
         individual[15:17] = np.clip(individual[15:17], self.bounds['repulsive_distance_min'], individual[13:15])
+        individual[17] = np.clip(individual[17], self.bounds['v_min'], self.bounds['v_max'])
+        individual[18:20] = np.clip(individual[18:20], self.bounds['g_min'], self.bounds['g_max'])
+        individual[20] = np.clip(individual[20], self.bounds['p_min'], self.bounds['p_max'])
         return individual
 
     def save_df(self):
@@ -212,6 +231,6 @@ class ClusterDifferentialEvolution:
         dead = np.empty(len(self.experiments))
         convexity = np.empty(len(self.experiments))
         for i in range(len(self.experiments)):
-            result = self._map(setting, self.areas[i], experiment=self.experiments[i],
+            result = self._map(setting, deepcopy(self.areas[i]), experiment=self.experiments[i],
                                arrangement=self.arrangements[i], animation_flag=True)
             time[i], target_distance[i], dead[i], convexity[i] = result
